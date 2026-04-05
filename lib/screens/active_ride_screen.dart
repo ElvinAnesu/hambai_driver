@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_text_styles.dart';
 import '../core/constants/route_names.dart';
 import '../models/driver_session.dart';
 import '../models/location.dart';
+import '../core/widgets/app_bar_refresh_button.dart';
 import '../providers/driver_session_provider.dart';
 import 'trip_summary_screen.dart';
 
-/// Demo: stable pseudo-random rides count (simulates automatic updates from QR/code scans).
-int _demoRidesCollected(DriverSession session) {
-  final hash = session.sessionId.hashCode.abs();
-  return (hash % 11) + 3; // 3–13
+Map<String, int> _dropOffCountsByRouteStop(List<Map<String, dynamic>> rides) {
+  final counts = <String, int>{};
+  for (final ride in rides) {
+    final dropoff = ride['dropoff_point'] as String?;
+    if (dropoff == null || dropoff.isEmpty) continue;
+    counts[dropoff] = (counts[dropoff] ?? 0) + 1;
+  }
+  return counts;
 }
 
 class ActiveRideScreen extends StatelessWidget {
@@ -46,6 +52,16 @@ class _ActiveRideContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final finalStopIndex = session.stops.isEmpty ? 0 : session.stops.length - 1;
+    final hasArrivedFinalStop =
+        session.stops.isNotEmpty && session.hasArrivedAtStop(finalStopIndex);
+    final actionLabel = hasArrivedFinalStop ? 'End trip' : 'Cancel trip';
+
+    final ridesStream = sb.Supabase.instance.client
+        .from('rides')
+        .stream(primaryKey: ['id'])
+        .eq('trip_id', session.tripId);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(session.routeDisplayName),
@@ -57,87 +73,111 @@ class _ActiveRideContent extends StatelessWidget {
             onPressed: () =>
                 Navigator.of(context).pushNamed(RouteNames.driverCodeDisplay),
           ),
+          const AppBarRefreshButton(),
         ],
       ),
-      body: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            color: AppColors.primaryLight,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Now at: ${session.currentStop?.name ?? "—"}',
-                  style: AppTextStyles.headlineMedium.copyWith(
-                    color: AppColors.primary,
-                  ),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: ridesStream,
+        initialData: const <Map<String, dynamic>>[],
+        builder: (context, snapshot) {
+          final rides = snapshot.data ?? const <Map<String, dynamic>>[];
+          final ridesCollected = rides.length;
+          final dropOffCounts = _dropOffCountsByRouteStop(rides);
+
+          return Column(
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                color: AppColors.primaryLight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Now at: ${session.currentStop?.name ?? "—"}',
+                      style: AppTextStyles.headlineMedium.copyWith(
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$ridesCollected rides collected',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${_demoRidesCollected(session)} rides collected',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: session.stops.length,
-              itemBuilder: (context, i) {
-                final stop = session.stops[i];
-                final isCurrent = i == session.currentStopIndex;
-                final isPast = i < session.currentStopIndex;
-                final passengersAlighting = session.passengersAlightingAt(i);
-                final hasArrived = session.hasArrivedAtStop(i);
-                final arrivedAt = session.arrivedAt(i);
-                return _StopTile(
-                  stop: stop,
-                  index: i + 1,
-                  isCurrent: isCurrent,
-                  isPast: isPast,
-                  passengersAlighting: passengersAlighting,
-                  hasArrived: hasArrived,
-                  arrivedAt: arrivedAt,
-                  onMarkArrived: () => context.read<DriverSessionProvider>().markArrivedAtStop(i),
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => _showEndRideConfirm(context),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text('End ride'),
               ),
-            ),
-          ),
-        ],
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: session.stops.length,
+                  itemBuilder: (context, i) {
+                    final stop = session.stops[i];
+                    final isCurrent = i == session.currentStopIndex;
+                    final isPast = i < session.currentStopIndex;
+                    final passengersAlighting = dropOffCounts[stop.id] ?? 0;
+                    final hasArrived =
+                        i < session.currentStopIndex || session.hasArrivedAtStop(i);
+                    final arrivedAt = session.arrivedAt(i);
+                    return _StopTile(
+                      stop: stop,
+                      index: i + 1,
+                      isCurrent: isCurrent,
+                      isPast: isPast,
+                      passengersAlighting: passengersAlighting,
+                      hasArrived: hasArrived,
+                      arrivedAt: arrivedAt,
+                      onMarkArrived: () {
+                        context.read<DriverSessionProvider>().markArrivedAtStop(i);
+                      },
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => _showCompleteTripConfirm(
+                      context,
+                      canEndNormally: hasArrivedFinalStop,
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(actionLabel),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  void _showEndRideConfirm(BuildContext context) {
+  void _showCompleteTripConfirm(
+    BuildContext context, {
+    required bool canEndNormally,
+  }) {
+    final title = canEndNormally ? 'End trip?' : 'Cancel trip?';
+    final content = canEndNormally
+        ? 'You reached the final stop. This will end the trip.'
+        : 'Final stop not reached. This trip will be cancelled.';
+    final actionLabel = canEndNormally ? 'End trip' : 'Cancel trip';
+
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('End ride?'),
-        content: const Text(
-          'This will end the current session. You can view the summary after.',
-        ),
+        title: Text(title),
+        content: Text(content),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -148,7 +188,7 @@ class _ActiveRideContent extends StatelessWidget {
               Navigator.pop(ctx);
               final ended = await context
                   .read<DriverSessionProvider>()
-                  .endSession();
+                  .completeSession(cancelled: !canEndNormally);
               if (!context.mounted) return;
               Navigator.of(context).popUntil(
                   (route) => route.settings.name == RouteNames.home);
@@ -161,7 +201,7 @@ class _ActiveRideContent extends StatelessWidget {
               }
             },
             style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-            child: const Text('End ride'),
+            child: Text(actionLabel),
           ),
         ],
       ),
@@ -286,7 +326,7 @@ class _StopTile extends StatelessWidget {
                           color: AppColors.textSecondary,
                         ),
                       )
-                    else
+                    else if (isCurrent)
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton(
@@ -295,6 +335,13 @@ class _StopTile extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(vertical: 6),
                           ),
                           child: const Text('Mark arrived'),
+                        ),
+                      )
+                    else if (isPast)
+                      Text(
+                        'Completed',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textSecondary,
                         ),
                       ),
                   ],

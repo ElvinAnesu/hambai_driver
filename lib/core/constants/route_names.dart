@@ -7,7 +7,6 @@ abstract class RouteNames {
   static const String completeProfile = '/complete-profile';
   static const String home = '/home';
   static const String profile = '/profile';
-  static const String editProfile = '/edit-profile';
   static const String settings = '/settings';
   static const String activeRide = '/active-ride';
   static const String driverCodeDisplay = '/driver-code-display';
@@ -16,5 +15,5 @@ abstract class RouteNames {
   static const String history = '/history';
   static const String terms = '/terms';
   static const String privacy = '/privacy';
-  static const String help = '/help';
+  static const String incidences = '/incidences';
 }

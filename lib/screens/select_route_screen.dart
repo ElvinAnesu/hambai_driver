@@ -6,6 +6,9 @@ import '../core/constants/route_names.dart';
 import '../models/predefined_route.dart';
 import '../services/mock_route_service.dart';
 import '../providers/driver_session_provider.dart';
+import '../providers/auth_provider.dart';
+import '../services/trip_service.dart';
+import '../core/widgets/app_bar_refresh_button.dart';
 import '../core/widgets/loading_indicator.dart';
 import '../core/widgets/empty_state.dart';
 import '../core/widgets/error_state.dart';
@@ -48,8 +51,27 @@ class _SelectRouteScreenState extends State<SelectRouteScreen> {
     }
   }
 
-  void _startSession(PredefinedRoute route) {
-    context.read<DriverSessionProvider>().startSession(route);
+  Future<void> _startSession(PredefinedRoute route) async {
+    final profileId = context.read<AuthProvider>().currentUser?.id;
+    if (profileId == null || profileId.isEmpty) {
+      return;
+    }
+    final result = await context.read<DriverSessionProvider>().startSession(
+          route: route,
+          profileId: profileId,
+          direction: 'inbound',
+        );
+    if (!mounted) return;
+    if (!result.ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.message ?? TripService.activeTripBlockedMessage,
+          ),
+        ),
+      );
+      return;
+    }
     Navigator.of(context).pushReplacementNamed(RouteNames.activeRide);
   }
 
@@ -60,6 +82,7 @@ class _SelectRouteScreenState extends State<SelectRouteScreen> {
         title: const Text('Select route'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        actions: const [AppBarRefreshButton()],
       ),
       body: _loading
           ? const LoadingIndicator()

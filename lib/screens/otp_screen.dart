@@ -7,6 +7,7 @@ import '../core/constants/app_constants.dart';
 import '../core/utils/validators.dart';
 import '../core/utils/formatters.dart';
 import '../providers/auth_provider.dart';
+import '../core/widgets/app_bar_refresh_button.dart';
 import '../core/widgets/loading_indicator.dart';
 
 class OtpScreen extends StatefulWidget {
@@ -93,6 +94,7 @@ class _OtpScreenState extends State<OtpScreen> {
         title: const Text('Verify OTP'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        actions: const [AppBarRefreshButton()],
       ),
       body: SafeArea(
         child: Padding(

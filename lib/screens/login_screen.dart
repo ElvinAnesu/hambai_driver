@@ -3,9 +3,7 @@ import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_text_styles.dart';
 import '../core/constants/route_names.dart';
-import '../core/constants/app_constants.dart';
 import '../core/utils/validators.dart';
-import '../core/utils/formatters.dart';
 import '../providers/auth_provider.dart';
 import '../core/widgets/loading_indicator.dart';
 
@@ -18,24 +16,35 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   String? _error;
 
   @override
   void dispose() {
-    _phoneController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _sendOtp() async {
+  Future<void> _login() async {
     _error = null;
     if (!_formKey.currentState!.validate()) return;
-    final phone = _phoneController.text.trim();
-    await context.read<AuthProvider>().sendOtp(phone);
+    final email = _emailController.text.trim().toLowerCase();
+    final password = _passwordController.text;
+    try {
+      await context.read<AuthProvider>().loginWithEmailPassword(
+        email: email,
+        password: password,
+      );
+    } catch (_) {
+      setState(() => _error = 'Invalid email or password');
+      return;
+    }
     if (!mounted) return;
-    Navigator.of(context).pushNamed(
-      RouteNames.otp,
-      arguments: Formatters.normalizePhone(phone),
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      RouteNames.home,
+      (route) => false,
     );
   }
 
@@ -64,7 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Enter your phone number',
+                'Enter your email and password',
                 style: AppTextStyles.bodyMedium.copyWith(
                   color: Colors.white70,
                 ),
@@ -86,17 +95,32 @@ class _LoginScreenState extends State<LoginScreen> {
                         children: [
                           const SizedBox(height: 24),
                           TextFormField(
-                            controller: _phoneController,
-                            keyboardType: TextInputType.phone,
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
                             decoration: InputDecoration(
-                              labelText: 'Phone',
-                              prefixText: '${AppConstants.countryCode} ',
+                              labelText: 'Email',
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            validator: Validators.phone,
+                            validator: Validators.email,
                             onChanged: (_) => setState(() => _error = null),
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: true,
+                            textInputAction: TextInputAction.done,
+                            decoration: InputDecoration(
+                              labelText: 'Password',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            validator: Validators.password,
+                            onChanged: (_) => setState(() => _error = null),
+                            onFieldSubmitted: (_) => _login(),
                           ),
                           if (_error != null) ...[
                             const SizedBox(height: 8),
@@ -115,14 +139,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                 return const LoadingIndicator();
                               }
                               return FilledButton(
-                                onPressed: _sendOtp,
+                                onPressed: _login,
                                 style: FilledButton.styleFrom(
                                   backgroundColor: AppColors.primary,
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 16,
                                   ),
                                 ),
-                                child: const Text('Send OTP'),
+                                child: const Text('Login'),
                               );
                             },
                           ),

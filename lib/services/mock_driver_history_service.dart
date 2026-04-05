@@ -27,6 +27,7 @@ class MockDriverHistoryService {
     return [
       DriverSession(
         sessionId: 'seed_1',
+        tripId: 'seed_1',
         routeId: 'route_1',
         routeDisplayName: 'Harare CBD – Avondale',
         stops: stops1,
@@ -38,6 +39,7 @@ class MockDriverHistoryService {
       ),
       DriverSession(
         sessionId: 'seed_2',
+        tripId: 'seed_2',
         routeId: 'route_2',
         routeDisplayName: 'Mbare – CBD – Highlands',
         stops: stops2,
@@ -49,6 +51,7 @@ class MockDriverHistoryService {
       ),
       DriverSession(
         sessionId: 'seed_3',
+        tripId: 'seed_3',
         routeId: 'route_1',
         routeDisplayName: 'Harare CBD – Avondale',
         stops: stops1,
@@ -60,6 +63,7 @@ class MockDriverHistoryService {
       ),
       DriverSession(
         sessionId: 'seed_4',
+        tripId: 'seed_4',
         routeId: 'route_3',
         routeDisplayName: 'Epworth – CBD',
         stops: stops3,
@@ -71,6 +75,7 @@ class MockDriverHistoryService {
       ),
       DriverSession(
         sessionId: 'seed_5',
+        tripId: 'seed_5',
         routeId: 'route_2',
         routeDisplayName: 'Mbare – CBD – Highlands',
         stops: stops2,

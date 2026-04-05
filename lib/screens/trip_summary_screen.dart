@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
+import '../core/widgets/app_bar_refresh_button.dart';
 import '../core/theme/app_text_styles.dart';
 import '../core/constants/route_names.dart';
 import '../models/driver_session.dart';
@@ -26,6 +27,7 @@ class TripSummaryScreen extends StatelessWidget {
         title: const Text('Trip summary'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        actions: const [AppBarRefreshButton()],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),

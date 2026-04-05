@@ -1,10 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_text_styles.dart';
 import '../core/constants/route_names.dart';
 import '../core/utils/validators.dart';
 import '../providers/auth_provider.dart';
+import '../core/widgets/app_bar_refresh_button.dart';
 import '../core/widgets/loading_indicator.dart';
 
 class CompleteProfileScreen extends StatefulWidget {
@@ -17,12 +20,15 @@ class CompleteProfileScreen extends StatefulWidget {
 class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final ImagePicker _imagePicker = ImagePicker();
+  String? _avatarUrl;
 
   @override
   void initState() {
     super.initState();
     final user = context.read<AuthProvider>().currentUser;
     if (user?.fullName != null) _nameController.text = user!.fullName!;
+    _avatarUrl = user?.avatarUrl;
   }
 
   @override
@@ -35,12 +41,32 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     if (!_formKey.currentState!.validate()) return;
     await context.read<AuthProvider>().updateProfile(
           fullName: _nameController.text.trim(),
+      avatarUrl: _avatarUrl,
         );
     if (!mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil(
       RouteNames.home,
       (route) => false,
     );
+  }
+
+  Future<void> _pickProfileImage() async {
+    final image = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 1200,
+    );
+    if (image == null || !mounted) return;
+    setState(() => _avatarUrl = image.path);
+  }
+
+  ImageProvider<Object>? _avatarProvider() {
+    if (_avatarUrl == null || _avatarUrl!.isEmpty) return null;
+    final avatar = _avatarUrl!;
+    if (avatar.startsWith('http') || avatar.startsWith('blob:')) {
+      return NetworkImage(avatar);
+    }
+    return FileImage(File(avatar));
   }
 
   @override
@@ -50,6 +76,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         title: const Text('Complete profile'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        actions: const [AppBarRefreshButton()],
       ),
       body: SafeArea(
         child: Padding(
@@ -65,6 +92,31 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                     "Add your name so passengers can see who's driving.",
                     style: AppTextStyles.bodyLarge.copyWith(
                       color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Center(
+                    child: Column(
+                      children: [
+                        CircleAvatar(
+                          radius: 44,
+                          backgroundColor: AppColors.primaryLight,
+                          backgroundImage: _avatarProvider(),
+                          child: _avatarProvider() == null
+                              ? const Icon(
+                                  Icons.person,
+                                  size: 40,
+                                  color: AppColors.primary,
+                                )
+                              : null,
+                        ),
+                        const SizedBox(height: 10),
+                        TextButton.icon(
+                          onPressed: _pickProfileImage,
+                          icon: const Icon(Icons.photo_library_outlined),
+                          label: const Text('Add profile picture'),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 32),

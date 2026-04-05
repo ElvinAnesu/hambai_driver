@@ -1,12 +1,12 @@
 import 'package:flutter/foundation.dart';
 import '../models/driver_session.dart';
-import '../services/mock_driver_history_service.dart';
+import '../services/driver_history_service.dart';
 
 class DriverHistoryProvider with ChangeNotifier {
-  DriverHistoryProvider({MockDriverHistoryService? service})
-      : _service = service ?? MockDriverHistoryService();
+  DriverHistoryProvider({DriverHistoryService? service})
+      : _service = service ?? DriverHistoryService();
 
-  final MockDriverHistoryService _service;
+  final DriverHistoryService _service;
   List<DriverSession> _sessions = [];
   bool _isLoading = false;
 

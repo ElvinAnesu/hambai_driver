@@ -4,6 +4,7 @@ import '../core/theme/app_colors.dart';
 import '../core/theme/app_text_styles.dart';
 import '../core/constants/route_names.dart';
 import '../core/constants/app_constants.dart';
+import '../core/widgets/app_bar_refresh_button.dart';
 import '../core/widgets/user_avatar.dart';
 import '../providers/auth_provider.dart';
 import '../providers/driver_session_provider.dart';
@@ -44,6 +45,7 @@ class _MainShellState extends State<MainShell> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         actions: [
+          const AppBarRefreshButton(),
           if (_currentIndex == 0)
             Consumer<DriverSessionProvider>(
               builder: (context, session, _) {
@@ -123,34 +125,18 @@ class _MainShellState extends State<MainShell> {
             const Divider(),
             ListTile(
               leading: const Icon(Icons.settings),
-              title: const Text('Settings'),
+              title: const Text('Options'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context).pushNamed(RouteNames.settings);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.description),
-              title: const Text('Terms'),
+              leading: const Icon(Icons.warning_amber_rounded),
+              title: const Text('Incidences'),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.of(context).pushNamed(RouteNames.terms);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.privacy_tip),
-              title: const Text('Privacy'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).pushNamed(RouteNames.privacy);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.help),
-              title: const Text('Help'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).pushNamed(RouteNames.help);
+                Navigator.of(context).pushNamed(RouteNames.incidences);
               },
             ),
           ],

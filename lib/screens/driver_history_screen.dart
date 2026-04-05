@@ -7,12 +7,6 @@ import '../providers/driver_history_provider.dart';
 import '../core/widgets/loading_indicator.dart';
 import '../core/widgets/empty_state.dart';
 
-/// Demo: stable display rides per session (matches active ride / trip summary).
-int _demoRidesCollected(DriverSession s) {
-  final hash = s.sessionId.hashCode.abs();
-  return (hash % 11) + 3;
-}
-
 class DriverHistoryScreen extends StatefulWidget {
   const DriverHistoryScreen({super.key});
 
@@ -56,7 +50,7 @@ class _DriverHistoryScreenState extends State<DriverHistoryScreen> {
         final allTimeTrips = sessions.length;
         final allTimeRides = sessions.fold<int>(
           0,
-          (sum, s) => sum + _demoRidesCollected(s),
+          (sum, s) => sum + s.ridesCollected,
         );
         return RefreshIndicator(
           onRefresh: () => provider.loadSessions(),
@@ -81,7 +75,6 @@ class _DriverHistoryScreenState extends State<DriverHistoryScreen> {
                 ...sessions.map((s) => _HistoryTile(
                       session: s,
                       formatDate: _formatDate,
-                      demoRides: _demoRidesCollected(s),
                     )),
               ],
             ),
@@ -205,12 +198,10 @@ class _HistoryTile extends StatelessWidget {
   const _HistoryTile({
     required this.session,
     required this.formatDate,
-    required this.demoRides,
   });
 
   final DriverSession session;
   final String Function(DateTime) formatDate;
-  final int demoRides;
 
   @override
   Widget build(BuildContext context) {
@@ -233,7 +224,7 @@ class _HistoryTile extends StatelessWidget {
           style: AppTextStyles.bodyLarge,
         ),
         subtitle: Text(
-          '${formatDate(session.startedAt)} · $demoRides rides',
+          '${formatDate(session.startedAt)} · ${session.ridesCollected} rides',
           style: AppTextStyles.bodySmall,
         ),
       ),

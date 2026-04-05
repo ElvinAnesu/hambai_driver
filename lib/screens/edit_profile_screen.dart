@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
 import '../core/utils/validators.dart';
 import '../providers/auth_provider.dart';
+import '../core/widgets/app_bar_refresh_button.dart';
 import '../core/widgets/loading_indicator.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -45,6 +46,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         title: const Text('Edit profile'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        actions: const [AppBarRefreshButton()],
       ),
       body: Padding(
         padding: const EdgeInsets.all(24),

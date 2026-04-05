@@ -5,9 +5,12 @@ import '../core/theme/app_text_styles.dart';
 import '../core/constants/route_names.dart';
 import '../models/driver_session.dart';
 import '../models/predefined_route.dart';
+import '../providers/auth_provider.dart';
 import '../providers/driver_session_provider.dart';
 import '../providers/driver_history_provider.dart';
-import '../services/mock_route_service.dart';
+import '../services/dashboard_metrics_service.dart';
+import '../services/route_service.dart';
+import '../services/trip_service.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
   const HomeDashboardScreen({super.key});
@@ -17,22 +20,72 @@ class HomeDashboardScreen extends StatefulWidget {
 }
 
 class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
-  final MockRouteService _routeService = MockRouteService();
+  final RouteService _routeService = RouteService();
+  final TripService _tripService = TripService();
   PredefinedRoute? _assignedRoute;
+  String? _driverId;
   bool _loadingAssigned = true;
+  int _summaryRefreshNonce = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadAssignedRoute();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAssignedRoute();
+    });
   }
 
   Future<void> _loadAssignedRoute() async {
-    final route = await _routeService.getAssignedRouteForDriver();
-    if (mounted) setState(() {
-      _assignedRoute = route;
-      _loadingAssigned = false;
-    });
+    final profileId = context.read<AuthProvider>().currentUser?.id;
+    if (profileId == null || profileId.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _assignedRoute = null;
+        _driverId = null;
+        _loadingAssigned = false;
+      });
+      return;
+    }
+    final driverId = await _tripService.getDriverIdForProfile(profileId);
+    final route = await _routeService.getAssignedRouteForDriver(profileId);
+    if (mounted) {
+      setState(() {
+        _driverId = driverId;
+        _assignedRoute = route;
+        _loadingAssigned = false;
+      });
+    }
+  }
+
+  PredefinedRoute _outboundRouteFrom(PredefinedRoute base) {
+    return PredefinedRoute(
+      id: base.id,
+      displayName: base.displayName,
+      stops: List.of(base.stops.reversed),
+    );
+  }
+
+  DriverSession _sessionFromActiveTripRow(Map<String, dynamic> row) {
+    final route = _assignedRoute;
+    final startedAtRaw = row['started_at'] as String?;
+    final startedAt = startedAtRaw == null
+        ? DateTime.now()
+        : DateTime.tryParse(startedAtRaw) ?? DateTime.now();
+    final currentStopIndex = row['current_stop_index'] is int
+        ? row['current_stop_index'] as int
+        : 0;
+    final routeId = row['route_id'] as String? ?? route?.id ?? '';
+    final tripId = row['id'] as String? ?? 'active_trip';
+    return DriverSession(
+      sessionId: tripId,
+      tripId: tripId,
+      routeId: routeId,
+      routeDisplayName: route?.displayName ?? 'Active trip',
+      stops: route?.stops ?? const [],
+      driverCode: '—',
+      startedAt: startedAt,
+      currentStopIndex: currentStopIndex,
+    );
   }
 
   @override
@@ -41,6 +94,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       onRefresh: () async {
         await context.read<DriverHistoryProvider>().loadSessions();
         await _loadAssignedRoute();
+        if (mounted) {
+          setState(() => _summaryRefreshNonce++);
+        }
       },
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -49,29 +105,153 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 16),
-            _SummaryCard(),
+            Consumer<AuthProvider>(
+              builder: (context, auth, _) => _SummaryCard(
+                driverProfileId: auth.currentUser?.id,
+                refreshNonce: _summaryRefreshNonce,
+              ),
+            ),
             const SizedBox(height: 24),
             Consumer<DriverSessionProvider>(
               builder: (context, sessionProvider, _) {
                 if (sessionProvider.hasActiveSession) {
                   return _ActiveRideCard(
                     session: sessionProvider.activeSession!,
-                    onEndRide: () => _showEndRideConfirm(context),
+                  );
+                }
+                if (_driverId != null && _driverId!.isNotEmpty) {
+                  return StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: _tripService.watchActiveTripsForDriver(_driverId!),
+                    initialData: const <Map<String, dynamic>>[],
+                    builder: (context, snapshot) {
+                      final activeTrips =
+                          snapshot.data ?? const <Map<String, dynamic>>[];
+                      final hasActiveTrip = activeTrips.isNotEmpty;
+                      if (hasActiveTrip) {
+                        final activeSession =
+                            _sessionFromActiveTripRow(activeTrips.first);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!context.mounted) return;
+                          context
+                              .read<DriverSessionProvider>()
+                              .syncActiveSessionFromRealtime(activeSession);
+                        });
+                        return _ActiveRideCard(
+                          session: activeSession,
+                        );
+                      }
+                      return _AssignedRouteAndStart(
+                        assignedRoute: _assignedRoute,
+                        loading: _loadingAssigned,
+                        onStartInbound: _assignedRoute == null
+                            ? null
+                            : () async {
+                                final profileId =
+                                    context.read<AuthProvider>().currentUser?.id;
+                                if (profileId == null || profileId.isEmpty) return;
+                                final result =
+                                    await sessionProvider.startSession(
+                                  route: _assignedRoute!,
+                                  profileId: profileId,
+                                  direction: 'inbound',
+                                );
+                                if (!context.mounted) return;
+                                if (!result.ok) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        result.message ??
+                                            TripService.activeTripBlockedMessage,
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                Navigator.of(context).pushNamed(RouteNames.activeRide);
+                              },
+                        onStartOutbound: _assignedRoute == null
+                            ? null
+                            : () async {
+                                final profileId =
+                                    context.read<AuthProvider>().currentUser?.id;
+                                if (profileId == null || profileId.isEmpty) return;
+                                final result =
+                                    await sessionProvider.startSession(
+                                  route: _outboundRouteFrom(_assignedRoute!),
+                                  profileId: profileId,
+                                  direction: 'outbound',
+                                );
+                                if (!context.mounted) return;
+                                if (!result.ok) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        result.message ??
+                                            TripService.activeTripBlockedMessage,
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                Navigator.of(context).pushNamed(RouteNames.activeRide);
+                              },
+                      );
+                    },
                   );
                 }
                 return _AssignedRouteAndStart(
                   assignedRoute: _assignedRoute,
                   loading: _loadingAssigned,
-                  onStartForward: _assignedRoute == null
+                  onStartInbound: _assignedRoute == null
                       ? null
-                      : () {
-                          sessionProvider.startSession(_assignedRoute!);
+                      : () async {
+                          final profileId =
+                              context.read<AuthProvider>().currentUser?.id;
+                          if (profileId == null || profileId.isEmpty) return;
+                          final result =
+                              await sessionProvider.startSession(
+                            route: _assignedRoute!,
+                            profileId: profileId,
+                            direction: 'inbound',
+                          );
+                          if (!context.mounted) return;
+                          if (!result.ok) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  result.message ??
+                                      TripService.activeTripBlockedMessage,
+                                ),
+                              ),
+                            );
+                            return;
+                          }
                           Navigator.of(context).pushNamed(RouteNames.activeRide);
                         },
-                  onStartReturn: _assignedRoute == null
+                  onStartOutbound: _assignedRoute == null
                       ? null
-                      : () {
-                          sessionProvider.startSession(_assignedRoute!.reversed());
+                      : () async {
+                          final profileId =
+                              context.read<AuthProvider>().currentUser?.id;
+                          if (profileId == null || profileId.isEmpty) return;
+                          final result =
+                              await sessionProvider.startSession(
+                            route: _outboundRouteFrom(_assignedRoute!),
+                            profileId: profileId,
+                            direction: 'outbound',
+                          );
+                          if (!context.mounted) return;
+                          if (!result.ok) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  result.message ??
+                                      TripService.activeTripBlockedMessage,
+                                ),
+                              ),
+                            );
+                            return;
+                          }
                           Navigator.of(context).pushNamed(RouteNames.activeRide);
                         },
                 );
@@ -83,57 +263,78 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     );
   }
 
-  void _showEndRideConfirm(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('End ride?'),
-        content: const Text(
-          'This will end the current session. You can view the summary after.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final ended = await context
-                  .read<DriverSessionProvider>()
-                  .endSession();
-              if (!context.mounted) return;
-              if (ended != null) {
-                await context.read<DriverHistoryProvider>().loadSessions();
-                if (!context.mounted) return;
-                Navigator.of(context).pushNamed(RouteNames.tripSummary, arguments: ended);
-              }
-            },
-            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-            child: const Text('End ride'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-class _SummaryCard extends StatelessWidget {
+class _SummaryCard extends StatefulWidget {
+  const _SummaryCard({
+    required this.driverProfileId,
+    required this.refreshNonce,
+  });
+
+  final String? driverProfileId;
+  final int refreshNonce;
+
+  @override
+  State<_SummaryCard> createState() => _SummaryCardState();
+}
+
+class _SummaryCardState extends State<_SummaryCard> {
+  final DashboardMetricsService _metricsService = DashboardMetricsService();
+  bool _loadingMetrics = true;
+  int _todayTrips = 0;
+  int _todayRides = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMetrics();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SummaryCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.driverProfileId != widget.driverProfileId ||
+        oldWidget.refreshNonce != widget.refreshNonce) {
+      _loadMetrics();
+    }
+  }
+
+  Future<void> _loadMetrics() async {
+    if (!mounted) return;
+    setState(() => _loadingMetrics = true);
+
+    final profileId = widget.driverProfileId;
+    if (profileId == null || profileId.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _todayTrips = 0;
+        _todayRides = 0;
+        _loadingMetrics = false;
+      });
+      return;
+    }
+
+    try {
+      final metrics = await _metricsService.fetchTodayMetricsForProfile(profileId);
+      if (!mounted) return;
+      setState(() {
+        _todayTrips = metrics.todayTrips;
+        _todayRides = metrics.todayRidesCollected;
+        _loadingMetrics = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _todayTrips = 0;
+        _todayRides = 0;
+        _loadingMetrics = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Consumer<DriverHistoryProvider>(
-      builder: (context, history, _) {
-        final today = DateTime.now();
-        final todaySessions = history.sessions.where((s) {
-          final d = s.startedAt;
-          return d.year == today.year &&
-              d.month == today.month &&
-              d.day == today.day;
-        }).toList();
-        final todayTrips = todaySessions.length;
-        final todayRides =
-            todaySessions.fold<int>(0, (sum, s) => sum + s.ridesCollected);
-        return Container(
+    return Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -179,6 +380,17 @@ class _SummaryCard extends StatelessWidget {
                         color: AppColors.textPrimary,
                       ),
                     ),
+                if (_loadingMetrics) ...[
+                  const SizedBox(width: 8),
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
                   ],
                 ),
                 const SizedBox(height: 20),
@@ -186,7 +398,7 @@ class _SummaryCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _StatPill(
-                        value: '$todayTrips',
+                    value: '$_todayTrips',
                         label: 'Trips',
                         icon: Icons.route_rounded,
                       ),
@@ -194,45 +406,16 @@ class _SummaryCard extends StatelessWidget {
                     const SizedBox(width: 16),
                     Expanded(
                       child: _StatPill(
-                        value: '$todayRides',
+                    value: '$_todayRides',
                         label: 'Rides collected',
                         icon: Icons.confirmation_number_rounded,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Consumer<DriverSessionProvider>(
-                  builder: (context, session, _) {
-                    final route = session.hasActiveSession
-                        ? session.activeSession!.routeDisplayName
-                        : 'None';
-                    return Row(
-                      children: [
-                        Icon(
-                          Icons.directions_bus_rounded,
-                          size: 16,
-                          color: AppColors.textSecondary,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Current: $route',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
               ],
             ),
           ),
-        );
-      },
     );
   }
 }
@@ -292,11 +475,9 @@ class _StatPill extends StatelessWidget {
 class _ActiveRideCard extends StatelessWidget {
   const _ActiveRideCard({
     required this.session,
-    required this.onEndRide,
   });
 
   final DriverSession session;
-  final VoidCallback onEndRide;
 
   @override
   Widget build(BuildContext context) {
@@ -381,37 +562,20 @@ class _ActiveRideCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () =>
-                        Navigator.of(context).pushNamed(RouteNames.activeRide),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text('View trip'),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () =>
+                    Navigator.of(context).pushNamed(RouteNames.activeRide),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: onEndRide,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text('End ride'),
-                  ),
-                ),
-              ],
+                child: const Text('View trip'),
+              ),
             ),
           ],
         ),
@@ -424,14 +588,14 @@ class _AssignedRouteAndStart extends StatelessWidget {
   const _AssignedRouteAndStart({
     required this.assignedRoute,
     required this.loading,
-    required this.onStartForward,
-    required this.onStartReturn,
+    required this.onStartInbound,
+    required this.onStartOutbound,
   });
 
   final PredefinedRoute? assignedRoute;
   final bool loading;
-  final VoidCallback? onStartForward;
-  final VoidCallback? onStartReturn;
+  final VoidCallback? onStartInbound;
+  final VoidCallback? onStartOutbound;
 
   @override
   Widget build(BuildContext context) {
@@ -495,9 +659,6 @@ class _AssignedRouteAndStart extends StatelessWidget {
       );
     }
     final route = assignedRoute!;
-    final returnRoute = route.reversed();
-    final forwardLabel = route.displayName;
-    final returnLabel = returnRoute.displayName;
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surfaceBright,
@@ -543,10 +704,11 @@ class _AssignedRouteAndStart extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Choose trip direction',
-                        style: AppTextStyles.headlineMedium.copyWith(
-                          fontWeight: FontWeight.w600,
+                        route.displayName,
+                        style: AppTextStyles.headlineLarge.copyWith(
+                          fontWeight: FontWeight.w800,
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -555,15 +717,17 @@ class _AssignedRouteAndStart extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             _DirectionChip(
-              label: forwardLabel,
+              title: 'Start trip',
+              direction: 'Inbound',
               icon: Icons.arrow_forward_rounded,
-              onTap: onStartForward,
+              onTap: onStartInbound,
             ),
             const SizedBox(height: 12),
             _DirectionChip(
-              label: returnLabel,
+              title: 'Start trip',
+              direction: 'Outbound',
               icon: Icons.arrow_back_rounded,
-              onTap: onStartReturn,
+              onTap: onStartOutbound,
             ),
           ],
         ),
@@ -574,12 +738,14 @@ class _AssignedRouteAndStart extends StatelessWidget {
 
 class _DirectionChip extends StatelessWidget {
   const _DirectionChip({
-    required this.label,
+    required this.title,
+    required this.direction,
     required this.icon,
     required this.onTap,
   });
 
-  final String label;
+  final String title;
+  final String direction;
   final IconData icon;
   final VoidCallback? onTap;
 
@@ -611,12 +777,25 @@ class _DirectionChip extends StatelessWidget {
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  label,
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      direction,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Icon(

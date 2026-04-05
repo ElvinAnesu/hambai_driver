@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
 import '../models/user.dart';
-import '../services/mock_auth_service.dart';
+import '../services/auth_service.dart';
 
 class AuthProvider with ChangeNotifier {
   AuthProvider({MockAuthService? authService})
@@ -38,32 +39,57 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> sendOtp(String phone) async {
+  Future<void> loginWithEmailPassword({
+    required String email,
+    required String password,
+  }) async {
     _isLoading = true;
     notifyListeners();
     try {
-      await _auth.sendOtp(phone);
+      _user = await _auth.loginWithEmailPassword(
+        email: email,
+        password: password,
+      );
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
+  @Deprecated('OTP flow removed. Use loginWithEmailPassword instead.')
+  Future<void> sendOtp(String phone) async {
+    throw UnimplementedError('OTP flow removed');
+  }
+
+  @Deprecated('OTP flow removed. Use loginWithEmailPassword instead.')
   Future<void> verifyOtp(String otp) async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      _user = await _auth.verifyOtp(otp);
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+    throw UnimplementedError('OTP flow removed');
   }
 
   Future<void> updateProfile({String? fullName, String? avatarUrl}) async {
     await _auth.updateProfile(fullName: fullName, avatarUrl: avatarUrl);
     _user = await _auth.loadUser();
     notifyListeners();
+  }
+
+  Future<void> uploadAvatar({
+    required Uint8List bytes,
+    required String fileExtension,
+    required String contentType,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _auth.uploadAvatar(
+        bytes: bytes,
+        fileExtension: fileExtension,
+        contentType: contentType,
+      );
+      _user = await _auth.loadUser();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> logout() async {

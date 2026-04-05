@@ -3,4 +3,6 @@ abstract class AppConstants {
   static const String appName = 'Hambai Driver';
   static const String countryCode = '+263';
   static const int otpLength = 6;
+  static const String demoDriverEmail = 'driver@hambai.com';
+  static const String demoDriverPassword = 'driver123';
 }

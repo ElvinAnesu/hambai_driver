@@ -5,6 +5,7 @@ import 'location.dart';
 /// [passengerDropOffsByStop] = stop index -> number of passengers alighting (drop-off) at that stop.
 class DriverSession {
   final String sessionId;
+  final String tripId;
   final String routeId;
   final String routeDisplayName;
   final List<Location> stops;
@@ -18,6 +19,7 @@ class DriverSession {
 
   const DriverSession({
     required this.sessionId,
+    required this.tripId,
     required this.routeId,
     required this.routeDisplayName,
     required this.stops,
@@ -43,6 +45,7 @@ class DriverSession {
 
   DriverSession copyWith({
     String? sessionId,
+    String? tripId,
     String? routeId,
     String? routeDisplayName,
     List<Location>? stops,
@@ -56,6 +59,7 @@ class DriverSession {
   }) {
     return DriverSession(
       sessionId: sessionId ?? this.sessionId,
+      tripId: tripId ?? this.tripId,
       routeId: routeId ?? this.routeId,
       routeDisplayName: routeDisplayName ?? this.routeDisplayName,
       stops: stops ?? this.stops,
@@ -81,6 +85,7 @@ class DriverSession {
     }
     return {
       'sessionId': sessionId,
+      'tripId': tripId,
       'routeId': routeId,
       'routeDisplayName': routeDisplayName,
       'stops': stops.map((s) => s.toJson()).toList(),
@@ -123,6 +128,7 @@ class DriverSession {
     }
     return DriverSession(
       sessionId: json['sessionId'] as String,
+      tripId: json['tripId'] as String? ?? json['sessionId'] as String,
       routeId: json['routeId'] as String,
       routeDisplayName: json['routeDisplayName'] as String,
       stops: stops,

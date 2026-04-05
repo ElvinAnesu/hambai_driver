@@ -1,5 +1,19 @@
 /// Form and input validators.
 abstract class Validators {
+  static String? email(String? value) {
+    if (value == null || value.trim().isEmpty) return 'Enter your email';
+    final email = value.trim();
+    final pattern = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+    if (!pattern.hasMatch(email)) return 'Enter a valid email address';
+    return null;
+  }
+
+  static String? password(String? value) {
+    if (value == null || value.isEmpty) return 'Enter your password';
+    if (value.length < 6) return 'Password must be at least 6 characters';
+    return null;
+  }
+
   static String? phone(String? value) {
     if (value == null || value.isEmpty) return 'Enter your phone number';
     final digits = value.replaceAll(RegExp(r'\D'), '');

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_text_styles.dart';
+import '../core/widgets/app_bar_refresh_button.dart';
 import '../providers/driver_session_provider.dart';
 
 class DriverCodeDisplayScreen extends StatelessWidget {
@@ -19,6 +20,7 @@ class DriverCodeDisplayScreen extends StatelessWidget {
               title: const Text('Driver code'),
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
+              actions: const [AppBarRefreshButton()],
             ),
             body: const Center(
               child: Text('No active session. Start a ride first.'),
@@ -47,6 +49,7 @@ class _CodeContent extends StatelessWidget {
         title: const Text('Driver code'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        actions: const [AppBarRefreshButton()],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
